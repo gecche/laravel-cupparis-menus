@@ -1,4 +1,4 @@
-<?php namespace Cupparis\Menus;
+<?php namespace Gecche\Cupparis\Menus;
 
 use Illuminate\Support\ServiceProvider;
 

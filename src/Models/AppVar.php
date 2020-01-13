@@ -1,4 +1,4 @@
-<?php namespace Cupparis\Menus\Models;
+<?php namespace Gecche\Cupparis\Menus\Models;
 
 use Cupparis\Ardent\Ardent as Ardent;
 

@@ -1,6 +1,6 @@
 <?php
 
-namespace Cupparis\Menus;
+namespace Gecche\Cupparis\Menus;
 
 use Cupparis\Acl\Contracts\AclContract;
 use Illuminate\Support\Facades\Cache;
