@@ -30,8 +30,8 @@ return array(
       |
      */
 
-    'builder_class' => '\\App\\Menu\\MenusBuilder',
-    'checker_class' => '\\App\\Menu\\MenusChecker',
+    'default-icon' => 'fa-bar-chart-o',
+    'default-path' => 'javascript:;',
 
     /*
      * STRUCTURE

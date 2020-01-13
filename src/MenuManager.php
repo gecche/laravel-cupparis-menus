@@ -3,6 +3,8 @@
 namespace Gecche\Cupparis\Menus;
 
 use Cupparis\Acl\Contracts\AclContract;
+use Illuminate\Contracts\Auth\Access\Authorizable as AuthorizableContract;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Request;
 use Illuminate\Support\Facades\Session;
@@ -19,15 +21,18 @@ class MenuManager {
 
     //protected $acl = null;
     // Array dei menu di un user
-    protected $menu_data = array();
-    protected $page_paths = array();
+
+    protected $config = null;
+
+    protected $menu_data = [];
+    protected $page_paths = [];
 
     protected $models_namespace;
 
-    protected $acl;
+    protected $user;
+    protected $userResolver = null;
 
     protected $menuBuilder = null;
-    protected $menuChecker = null;
 
     protected $breadCrumbs = "";
     protected $breadCrumbsLevel = 0;
@@ -38,28 +43,31 @@ class MenuManager {
 
 
 
+
     /**
      * Loads Session and configuration options.
      *
      * @return  void
      */
-    public function __construct(AclContract $acl) {//AclManager $acl) {
+    public function __construct(callable $userResolver) {//AclManager $acl) {
         // Save the config in the object
-        $this->acl = $acl;
-        $this->menu_data = array();
+
+        $this->userResolver = $userResolver;
+        $this->config = Config::get('menus',[]);
+        $this->menu_data = [];
 
         $this->models_namespace = Config::get('app.models_namespace',"\\App\\Models") . "\\";
 
-        $menuBuilderClass = Config::get('menus.builder_class',null);
-        if ($menuBuilderClass && class_exists($menuBuilderClass) && method_exists($menuBuilderClass,'buildMenus')) {
-            $this->menuBuilder = new $menuBuilderClass();
-        }
 
-        $menuCheckerClass = Config::get('menus.checker_class',null);
-        if ($menuCheckerClass && class_exists($menuCheckerClass)) {
-            $this->menuChecker = new $menuCheckerClass();
-        }
     }
+
+
+    public function setMenuBuilder(MenuBuilder $menuBuilder) {
+
+        $this->menuBuilder = $menuBuilder;
+
+    }
+
 
     public function getMenuData($menuId = null,$force = false,$getEmpty = false) {
 
@@ -74,7 +82,7 @@ class MenuManager {
         }
 
         //menu === null li prendo tutti
-        $menuData = array();
+        $menuData = [];
         foreach ($menuIds as $currentMenuId) {
             $menuData[$currentMenuId] = $this->getSingleMenuData($currentMenuId,$getEmpty,$force);
         }
@@ -91,23 +99,21 @@ class MenuManager {
             $rebuild_menu_db_value = $appVarModelName::find('REBUILD_MENU')->value;
 
             if ($rebuild_menu_db_value < $rebuild_menu_session_value) {
-                return Session::get('menu_data.'.$menuId,array());
+                return Session::get('menu_data.'.$menuId,[]);
             }
         }
 
-        $menuArrayBuilded = array();
 
-        $menuArray = array_get($this->menu_data,$menuId,[]);
+        $menuArray = Arr::get($this->menu_data,$menuId,[]);
 
-        $titolo = $this->getLangField('titolo',$menuArray);
         $menuArrayBuilded = $menuArray;
         $menuArrayBuilded["id"] = $menuId;
-        $menuArrayBuilded["titolo"] = $titolo ? $titolo : $menuId;
-        $menuArrayBuilded["icon"] = array_get($menuArray,'icon','fa-bar-chart-o');
-        $menuArrayBuilded["path"] = array_get($menuArray,'path','javascript:;');
+        $menuArrayBuilded["titolo"] = Arr::get($menuArray,'titolo',$menuId);
+        $menuArrayBuilded["icon"] = Arr::get($menuArray,'icon',Arr::get($this->config,'default-icon'));
+        $menuArrayBuilded["path"] = Arr::get($menuArray,'path',Arr::get($this->config,'default-path'));
 
-        $menuArrayBuilded["items"] = array();
-        $items = array_get($menuArray,'items',[]);
+        $menuArrayBuilded["items"] = [];
+        $items = Arr::get($menuArray,'items',[]);
         foreach ($items as $menuItemId => $menuItem) {
             $menuItemBuilded = $this->getSingleMenuItem($menuId,$menuItemId,$menuItem);
             if ($menuItemBuilded) {
@@ -118,7 +124,7 @@ class MenuManager {
 
 
         if (!$getEmpty && count($menuArrayBuilded['items']) < 1) {
-            $menuArrayBuilded = array();
+            $menuArrayBuilded = [];
         }
 
         Session::put('REBUILD_MENU_'.$menuId, Carbon::now()->toDateTimeString());
@@ -131,20 +137,18 @@ class MenuManager {
     public function getSingleMenuItem($menuId, $menuItemId, $menuItemArray) {
 
 
-        if (!$this->checkMenuItemPermission($menuId, $menuItemId, $menuItemArray)) {
-            return array();
+        if (!$this->checkMenuItemPermission($menuItemArray)) {
+            return [];
         }
 
-        $menuItemArrayBuilded = array();
-        $nome = $this->getLangField('nome',$menuItemArray);
-        $menuItemArrayBuilded["nome"] = $nome ? $nome : $menuItemId;
-        $menuItemArrayBuilded["nome_it"] = $nome ? $nome : $menuItemId;
-        $menuItemArrayBuilded["icon"] = array_get($menuItemArray,'icon','fa-bar-chart-o');
-        $menuItemArrayBuilded["path"] = array_get($menuItemArray,'path','javascript:;');
+        $menuItemArrayBuilded = [];
+        $menuItemArrayBuilded["nome"] = Arr::get($menuItemArray,'nome',$menuItemId);
+        $menuItemArrayBuilded["icon"] = Arr::get($menuItemArray,'icon',Arr::get($this->config,'default-icon'));
+        $menuItemArrayBuilded["path"] = Arr::get($menuItemArray,'path',Arr::get($this->config,'default-path'));
 
-        $menuItemArrayBuilded["sub_items"] = array();
+        $menuItemArrayBuilded["sub_items"] = [];
 
-        foreach (array_get($menuItemArray,'items',[]) as $menuSubItemKey => $menuSubItemArray) {
+        foreach (Arr::get($menuItemArray,'items',[]) as $menuSubItemKey => $menuSubItemArray) {
             $subMenuItemBuilded = $this->getSingleMenuItem($menuId,$menuSubItemKey,$menuSubItemArray);
             if ($subMenuItemBuilded) {
                 $menuItemArrayBuilded["sub_items"][$menuSubItemKey] = $subMenuItemBuilded;
@@ -156,20 +160,34 @@ class MenuManager {
     }
 
 
-    protected function checkMenuItemPermission($menuId, $menuItemId, $menuItemArray) {
+    protected function checkMenuItemPermission($menuItemArray) {
 
-        $methodPermissionName = 'check'.studly_case($menuId).studly_case($menuItemId);
-        if ($this->menuChecker && method_exists($this->menuChecker,$methodPermissionName)) {
-            return $this->$methodPermissionName();
-        }
 
-        $permission = array_get($menuItemArray,'permission',null);
+        $permission = Arr::get($menuItemArray,'permission',null);
         if (!$permission) {
             return true;
         }
+        $permissionArray = explode('|',$permission);
+        $permissionName = Arr::pull($permissionArray,0);
 
-        $resourceId = array_get($menuItemArray,'resource_id',null);
-        return $this->acl->check($permission,$resourceId);
+        $arguments = [];
+
+
+
+        foreach ($permissionArray as $argument) {
+
+            $argumentArray = explode(':',$argument);
+            if (count($argumentArray) < 2) {
+                $arguments[] = $argument;
+                continue;
+            }
+            list($modelClass,$modelId) = $argumentArray;
+            $arguments[] = $modelClass::find($modelId);
+
+        }
+
+
+        return $this->user->can($permissionName,$arguments);
 
     }
 
@@ -181,12 +199,11 @@ class MenuManager {
             return;
         }
 
-        $menuData = Config::get('menus.menu_data',[]);
+        $menuData = Arr::get($this->config,'menu_data',[]);
 
 
-        $dynamicMenuData = array();
+        $dynamicMenuData = [];
         if ($this->menuBuilder) {
-
             $dynamicMenuData = $this->menuBuilder->buildMenus();
         }
 
@@ -200,26 +217,6 @@ class MenuManager {
 
     }
 
-
-    protected function getLangfield($field,$array,$default = null) {
-
-        $localeField = $field . '_' . app()->getLocale();
-
-        if (array_key_exists($localeField,$array)) {
-            return $array[$localeField];
-        }
-
-        if (array_key_exists($field,$array)) {
-            return $array[$field];
-        }
-
-        if (array_key_exists($default,$array)) {
-            return $array[$default];
-        }
-
-        return $default;
-
-    }
 
     public function setBreadcrumbs() {
         $this->breadCrumbsBuilded = 1;
@@ -235,32 +232,32 @@ class MenuManager {
 
 
             if ($this->breadCrumbsLevel == 0) {
-                $path = array_get($menu,'path','');
+                $path = Arr::get($menu,'path','');
                 if ($this->checkActivePath($requestPath,$path)) {
                     $this->breadCrumbsLevel = 1;
-                    $breadCrumbsTitle = array_get($menu,'titolo','');
+                    $breadCrumbsTitle = Arr::get($menu,'titolo','');
                     $breadCrumbs = $menuKey;
                 }
             }
 
 
-            foreach (array_get($menu,'items',[]) as $menuItemKey => $menuItem) {
+            foreach (Arr::get($menu,'items',[]) as $menuItemKey => $menuItem) {
 
                 if ($this->breadCrumbsLevel < 2) {
-                    $levelPath = array_get($menuItem, 'path', '');
+                    $levelPath = Arr::get($menuItem, 'path', '');
 
                     if ($this->checkActivePath($requestPath, $levelPath)) {
                         $this->breadCrumbsLevel = 2;
 
                         $breadCrumbs = $menuKey .'.' . $menuItemKey;
-                        $breadCrumbsTitle = array_get($menuItem,'nome','');
+                        $breadCrumbsTitle = Arr::get($menuItem,'nome','');
 
 
                     }
                 }
 
 
-                foreach (array_get($menuItem,'sub_items',[]) as $menuSubItemKey => $menuSubItem) {
+                foreach (Arr::get($menuItem,'sub_items',[]) as $menuSubItemKey => $menuSubItem) {
 
                     $level = 3;
                     $prefixKey = $menuKey . '.' . $menuItemKey;
@@ -281,23 +278,23 @@ class MenuManager {
                 $menuBreadCrumbed = [];
                 foreach (explode('.',$this->breadCrumbs) as $key => $breadCrumbLevel) {
                     if ($key == 0) {
-                        $menuBreadCrumbed = array_get($this->menu_data,$breadCrumbLevel,[]);
+                        $menuBreadCrumbed = Arr::get($this->menu_data,$breadCrumbLevel,[]);
                         if (count($menuBreadCrumbed) <= 0) {
                             break;
                         }
                         $breadCrumbsResolved[] = [
-                            'link' => array_get($menuBreadCrumbed,'path','javascript:;'),
-                            'title' => array_get($menuBreadCrumbed,'titolo',$breadCrumbLevel),
+                            'link' => Arr::get($menuBreadCrumbed,'path',Arr::get($this->config,'default-path')),
+                            'title' => Arr::get($menuBreadCrumbed,'titolo',$breadCrumbLevel),
                         ];
                         continue;
                     }
-                    $menuBreadCrumbed = array_get(array_get($menuBreadCrumbed,'items',[]),$breadCrumbLevel,[]);
+                    $menuBreadCrumbed = Arr::get(Arr::get($menuBreadCrumbed,'items',[]),$breadCrumbLevel,[]);
                     if (count($menuBreadCrumbed) <= 0) {
                         break;
                     }
                     $breadCrumbsResolved[] = [
-                        'link' => array_get($menuBreadCrumbed,'path','javascript:;'),
-                        'title' => array_get($menuBreadCrumbed,'nome_'.app()->getLocale(),$breadCrumbLevel),
+                        'link' => Arr::get($menuBreadCrumbed,'path',Arr::get($this->config,'default-path')),
+                        'title' => Arr::get($menuBreadCrumbed,'nome',$breadCrumbLevel),
                     ];
 
                 }
@@ -320,23 +317,23 @@ class MenuManager {
 
         $prefixKey = $prefixKey . '.' . $menuItemKey;
         if ($this->breadCrumbsLevel < $level) {
-            $levelPath = array_get($menuItem, 'path', '');
+            $levelPath = Arr::get($menuItem, 'path', '');
 
             if ($this->checkActivePath($requestPath, $levelPath)) {
                 $this->breadCrumbsLevel = $level;
 
                 $breadCrumbs = $prefixKey;
-                $breadCrumbsTitle = array_get($menuItem,'nome',"");
+                $breadCrumbsTitle = Arr::get($menuItem,'nome',"");
 
 
             }
         }
-        foreach (array_get($menuItem,'sub_items',[]) as $menuSubItemKey => $menuSubItem) {
+        foreach (Arr::get($menuItem,'sub_items',[]) as $menuSubItemKey => $menuSubItem) {
 
             $breadCrumbsRecursive = $this->_getBreadCrumbsLevel($menuSubItemKey, $menuSubItem, $prefixKey, $level+1,$requestPath);
             if ($breadCrumbsRecursive) {
                 $breadCrumbs = $breadCrumbsRecursive;
-                $breadCrumbsTitle = array_get($menuSubItem,'nome',"");
+                $breadCrumbsTitle = Arr::get($menuSubItem,'nome',"");
             }
         }
 
@@ -363,5 +360,13 @@ class MenuManager {
     }
 
 
-
+    /**
+     * Resolve the user from the user resolver.
+     *
+     * @return mixed
+     */
+    protected function resolveUser()
+    {
+        return call_user_func($this->userResolver);
+    }
 }
