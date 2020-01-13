@@ -32,7 +32,6 @@ return array(
 
     'default-icon' => 'fa-bar-chart-o',
     'default-path' => 'javascript:;',
-
     /*
      * STRUCTURE
      */

@@ -10,11 +10,12 @@ use Illuminate\Support\Facades\Request;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Config;
 use Carbon\Carbon;
+use Illuminate\Support\Str;
+
 /*
  *
  use Cupparis\Menu\Models\Menu;
 use Cupparis\Menu\Models\MenuItem;
-use Cupparis\Menu\Models\AppVar;
 */
 
 class MenuManager {
@@ -29,7 +30,6 @@ class MenuManager {
 
     protected $models_namespace;
 
-    protected $user;
     protected $userResolver = null;
 
     protected $menuBuilder = null;
@@ -69,36 +69,70 @@ class MenuManager {
     }
 
 
+    /*
+     * IMPOSTA IN SESSIONE LA CONFIGURAZIONE STATICA E LA DINAMICA (NON PER USER)
+     */
+
+    public function setMenuData($force = false) {
+
+        if (!$force) {
+            $rebuildMenuSessionValue = Session::get('REBUILD_MENU', null);
+            $rebuildMenuCacheValue = Cache::get('REBUILD_MENU',0);
+
+            $sessionMenuData = Session::get('menu_data',false);
+            if ($sessionMenuData && $rebuildMenuCacheValue <= $rebuildMenuSessionValue) {
+                $this->menu_data = $sessionMenuData;
+                return;
+            }
+        }
+
+        $menuData = Arr::get($this->config,'menu_data',[]);
+
+        $dynamicMenuData = [];
+        if ($this->menuBuilder) {
+            $dynamicMenuData = $this->menuBuilder->buildMenus();
+        }
+
+        $menuData = array_merge($menuData,$dynamicMenuData);
+
+        $this->menu_data = $menuData;
+
+        Cache::forever('REBUILD_MENU',Carbon::now()->timestamp);
+        Session::put('REBUILD_MENU', Carbon::now()->timestamp);
+        Session::put('menu_data',$menuData);
+
+    }
+
     public function getMenuData($menuId = null,$force = false,$getEmpty = false) {
 
         if (!$this->menu_data || $force) {
             $this->setMenuData($force);
         }
 
+        $user = $this->resolveUser();
+
         $menuIds = array_keys($this->menu_data);
 
         if ($menuId) {
-            return [$menuId => $this->getSingleMenuData($menuId,$getEmpty,$force)];
+            return [$menuId => $this->getSingleMenuData($user,$menuId,$getEmpty,$force)];
         }
 
         //menu === null li prendo tutti
         $menuData = [];
         foreach ($menuIds as $currentMenuId) {
-            $menuData[$currentMenuId] = $this->getSingleMenuData($currentMenuId,$getEmpty,$force);
+            $menuData[$currentMenuId] = $this->getSingleMenuData($user,$currentMenuId,$getEmpty,$force);
         }
 
         return $menuData;
     }
 
 
-    public function getSingleMenuData($menuId, $getEmpty = false, $force = false) {
+    protected function getSingleMenuData($user,$menuId, $getEmpty = false, $force = false) {
         if (Session::has('menu_data.'.$menuId) && !$force) {
             //Check rebuild menu
-            $rebuild_menu_session_value = Session::get('REBUILD_MENU_'.$menuId, null);
-            $appVarModelName = $this->models_namespace . 'AppVar';
-            $rebuild_menu_db_value = $appVarModelName::find('REBUILD_MENU')->value;
-
-            if ($rebuild_menu_db_value < $rebuild_menu_session_value) {
+            $rebuildMenuSessionValue = Session::get('REBUILD_MENU_'.$menuId.'_'.intval($getEmpty), null);
+            $rebuildMenuCacheValue = Cache::get('REBUILD_MENU',0);
+            if ($rebuildMenuCacheValue < $rebuildMenuSessionValue) {
                 return Session::get('menu_data.'.$menuId,[]);
             }
         }
@@ -115,7 +149,7 @@ class MenuManager {
         $menuArrayBuilded["items"] = [];
         $items = Arr::get($menuArray,'items',[]);
         foreach ($items as $menuItemId => $menuItem) {
-            $menuItemBuilded = $this->getSingleMenuItem($menuId,$menuItemId,$menuItem);
+            $menuItemBuilded = $this->getSingleMenuItem($user,$menuId,$menuItemId,$menuItem);
             if ($menuItemBuilded) {
                 $menuArrayBuilded["items"][$menuItemId] = $menuItemBuilded;
             }
@@ -127,17 +161,17 @@ class MenuManager {
             $menuArrayBuilded = [];
         }
 
-        Session::put('REBUILD_MENU_'.$menuId, Carbon::now()->toDateTimeString());
-        Session::put('menu_data.'.$menuId, $menuArrayBuilded);
+        Session::put('REBUILD_MENU_'.$menuId.'_'.intval($getEmpty), Carbon::now()->timestamp);
+        Session::put('menu_data.'.$menuId.'_'.intval($getEmpty), $menuArrayBuilded);
         return $menuArrayBuilded;
 
 
     }
 
-    public function getSingleMenuItem($menuId, $menuItemId, $menuItemArray) {
+    protected function getSingleMenuItem($user,$menuId, $menuItemId, $menuItemArray) {
 
 
-        if (!$this->checkMenuItemPermission($menuItemArray)) {
+        if (!$this->checkMenuItemPermission($user,$menuItemArray)) {
             return [];
         }
 
@@ -149,7 +183,7 @@ class MenuManager {
         $menuItemArrayBuilded["sub_items"] = [];
 
         foreach (Arr::get($menuItemArray,'items',[]) as $menuSubItemKey => $menuSubItemArray) {
-            $subMenuItemBuilded = $this->getSingleMenuItem($menuId,$menuSubItemKey,$menuSubItemArray);
+            $subMenuItemBuilded = $this->getSingleMenuItem($user,$menuId,$menuSubItemKey,$menuSubItemArray);
             if ($subMenuItemBuilded) {
                 $menuItemArrayBuilded["sub_items"][$menuSubItemKey] = $subMenuItemBuilded;
             }
@@ -160,13 +194,19 @@ class MenuManager {
     }
 
 
-    protected function checkMenuItemPermission($menuItemArray) {
+    protected function checkMenuItemPermission($user,$menuItemArray) {
 
 
         $permission = Arr::get($menuItemArray,'permission',null);
         if (!$permission) {
             return true;
         }
+
+        //IN LARAVEL 5.5 I GUEST HANNO ACCESSO SOLO SE IL MENU ITEM NON HA PERMESSI
+        if (!$user) {
+            return false;
+        }
+
         $permissionArray = explode('|',$permission);
         $permissionName = Arr::pull($permissionArray,0);
 
@@ -187,42 +227,17 @@ class MenuManager {
         }
 
 
-        return $this->user->can($permissionName,$arguments);
+        return $user->can($permissionName,$arguments);
 
     }
 
-    public function setMenuData($force = false) {
-
-        $sessionMenuData = Session::get('menu_data',false);
-        if ($sessionMenuData && !$force) {
-            $this->menu_data = $sessionMenuData;
-            return;
-        }
-
-        $menuData = Arr::get($this->config,'menu_data',[]);
-
-
-        $dynamicMenuData = [];
-        if ($this->menuBuilder) {
-            $dynamicMenuData = $this->menuBuilder->buildMenus();
-        }
-
-        $menuData = array_merge($menuData,$dynamicMenuData);
-
-        $this->menu_data = $menuData;
-
-        $appVarModelName = $this->models_namespace . 'AppVar';
-        $appVar = $appVarModelName::initializeVar('REBUILD_MENU',Carbon::now()->toDateTimeString());
-        Session::put('menu_data',$menuData);
-
-    }
 
 
     public function setBreadcrumbs() {
         $this->breadCrumbsBuilded = 1;
 
         $requestPath = request()->path();
-        $menuData = $this->getMenuData(null,true,true);
+        $menuData = $this->getMenuData(null,false,true);
 
         $breadCrumbs = "";
         $breadCrumbsTitle = "";
