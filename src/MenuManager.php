@@ -76,10 +76,10 @@ class MenuManager {
     public function setMenuData($force = false) {
 
         if (!$force) {
-            $rebuildMenuSessionValue = Session::get('REBUILD_MENU', null);
+            $rebuildMenuSessionValue = Session::get('REBUILD_MENU'.Session::getId(), null);
             $rebuildMenuCacheValue = Cache::get('REBUILD_MENU',0);
 
-            $sessionMenuData = Session::get('menu_data',false);
+            $sessionMenuData = Session::get('menu_data'.Session::getId(),false);
             if ($sessionMenuData && $rebuildMenuCacheValue <= $rebuildMenuSessionValue) {
                 $this->menu_data = $sessionMenuData;
                 return;
@@ -98,8 +98,8 @@ class MenuManager {
         $this->menu_data = $menuData;
 
         Cache::forever('REBUILD_MENU',Carbon::now()->timestamp);
-        Session::put('REBUILD_MENU', Carbon::now()->timestamp);
-        Session::put('menu_data',$menuData);
+        Session::put('REBUILD_MENU'.Session::getId(), Carbon::now()->timestamp);
+        Session::put('menu_data'.Session::getId(),$menuData);
 
     }
 
@@ -128,12 +128,12 @@ class MenuManager {
 
 
     protected function getSingleMenuData($user,$menuId, $getEmpty = false, $force = false) {
-        if (Session::has('menu_data.'.$menuId) && !$force) {
+        if (Session::has('menu_data-'.$menuId.Session::getId()) && !$force) {
             //Check rebuild menu
-            $rebuildMenuSessionValue = Session::get('REBUILD_MENU_'.$menuId.'_'.intval($getEmpty), null);
+            $rebuildMenuSessionValue = Session::get('REBUILD_MENU_'.$menuId.'_'.intval($getEmpty).Session::getId(), null);
             $rebuildMenuCacheValue = Cache::get('REBUILD_MENU',0);
             if ($rebuildMenuCacheValue < $rebuildMenuSessionValue) {
-                return Session::get('menu_data.'.$menuId,[]);
+                return Session::get('menu_data-'.$menuId.Session::getId(),[]);
             }
         }
 
@@ -161,8 +161,8 @@ class MenuManager {
             $menuArrayBuilded = [];
         }
 
-        Session::put('REBUILD_MENU_'.$menuId.'_'.intval($getEmpty), Carbon::now()->timestamp);
-        Session::put('menu_data.'.$menuId.'_'.intval($getEmpty), $menuArrayBuilded);
+        Session::put('REBUILD_MENU_'.$menuId.'_'.intval($getEmpty).Session::getId(), Carbon::now()->timestamp);
+        Session::put('menu_data-'.$menuId.'_'.intval($getEmpty).Session::getId(), $menuArrayBuilded);
         return $menuArrayBuilded;
 
 
