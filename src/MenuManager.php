@@ -175,17 +175,17 @@ class MenuManager {
             return [];
         }
 
-        $menuItemArrayBuilded = [];
+        $menuItemArrayBuilded = $menuItemArray;
         $menuItemArrayBuilded["nome"] = Arr::get($menuItemArray,'nome',$menuItemId);
         $menuItemArrayBuilded["icon"] = Arr::get($menuItemArray,'icon',Arr::get($this->config,'default-icon'));
         $menuItemArrayBuilded["path"] = Arr::get($menuItemArray,'path',Arr::get($this->config,'default-path'));
 
-        $menuItemArrayBuilded["sub_items"] = [];
+        $menuItemArrayBuilded["items"] = [];
 
         foreach (Arr::get($menuItemArray,'items',[]) as $menuSubItemKey => $menuSubItemArray) {
             $subMenuItemBuilded = $this->getSingleMenuItem($user,$menuId,$menuSubItemKey,$menuSubItemArray);
             if ($subMenuItemBuilded) {
-                $menuItemArrayBuilded["sub_items"][$menuSubItemKey] = $subMenuItemBuilded;
+                $menuItemArrayBuilded["items"][$menuSubItemKey] = $subMenuItemBuilded;
             }
         }
 
@@ -272,7 +272,7 @@ class MenuManager {
                 }
 
 
-                foreach (Arr::get($menuItem,'sub_items',[]) as $menuSubItemKey => $menuSubItem) {
+                foreach (Arr::get($menuItem,'items',[]) as $menuSubItemKey => $menuSubItem) {
 
                     $level = 3;
                     $prefixKey = $menuKey . '.' . $menuItemKey;
@@ -343,7 +343,7 @@ class MenuManager {
 
             }
         }
-        foreach (Arr::get($menuItem,'sub_items',[]) as $menuSubItemKey => $menuSubItem) {
+        foreach (Arr::get($menuItem,'items',[]) as $menuSubItemKey => $menuSubItem) {
 
             $breadCrumbsRecursive = $this->_getBreadCrumbsLevel($menuSubItemKey, $menuSubItem, $prefixKey, $level+1,$requestPath);
             if ($breadCrumbsRecursive) {
