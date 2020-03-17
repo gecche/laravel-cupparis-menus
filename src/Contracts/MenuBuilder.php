@@ -1,6 +1,6 @@
 <?php
 
-namespace Gecche\Cupparis\Menus;
+namespace Gecche\Cupparis\Menus\Contracts;
 
 
 interface MenuBuilder
