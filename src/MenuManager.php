@@ -52,7 +52,7 @@ class MenuManager {
         // Save the config in the object
 
         $this->userResolver = $userResolver;
-        $this->config = Config::get('menus',[]);
+        $this->config = Config::get('cupparis-menus',[]);
         $this->menu_data = [];
 
         $this->models_namespace = Config::get('app.models_namespace',"\\App\\Models") . "\\";
