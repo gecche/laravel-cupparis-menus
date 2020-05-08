@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Config;
 use Carbon\Carbon;
+use Illuminate\Support\Str;
 
 
 /*
@@ -370,7 +371,7 @@ class MenuManager {
 
 
     public function checkActivePath($requestPath,$path) {
-        return ($path && starts_with($requestPath, trim($path,'/')));
+        return ($path && Str::startsWith($requestPath, trim($path,'/')));
     }
 
 
