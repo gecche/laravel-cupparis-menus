@@ -1,0 +1,48 @@
+{
+    "name": "gecche/laravel-cupparis-menus",
+    "description": "Semplice package per costruire i menu da file di configurazione",
+    "keywords": ["laravel", "cupparis"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Giacomo Terreni",
+            "email": "giacomo.terreni@gmail.com"
+        }
+    ],
+    "require": {
+        "laravel/framework": "^6.0",
+        "gecche/laravel-cupparis-helpers": "2.0.*"
+    },
+    "require-dev": {
+        "mockery/mockery": "^1.0",
+        "phpunit/phpunit": "^8.0",
+        "limedeck/phpunit-detailed-printer": "^5.0",
+        "orchestra/testbench": "^4.0"
+    },
+    "autoload": {
+        "classmap": [
+
+        ],
+        "psr-4": {
+            "Gecche\\Cupparis\\Menus\\": "src"
+        },
+        "files": [
+
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Gecche\\Cupparis\\Menus\\MenuServiceProvider"
+            ]
+        }
+    }
+}
