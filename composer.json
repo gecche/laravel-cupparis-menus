@@ -9,15 +9,21 @@
             "email": "giacomo.terreni@gmail.com"
         }
     ],
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "http://github.com/gecche/laravel-cupparis-helpers"
+        }
+    ],
     "require": {
-        "laravel/framework": "^6.0",
-        "gecche/laravel-cupparis-helpers": "2.0.*"
+        "laravel/framework": "^9.0",
+        "gecche/laravel-cupparis-helpers": "^9.0"
     },
     "require-dev": {
-        "mockery/mockery": "^1.0",
-        "phpunit/phpunit": "^8.0",
-        "limedeck/phpunit-detailed-printer": "^5.0",
-        "orchestra/testbench": "^4.0"
+        "mockery/mockery": "^1.4.4",
+        "phpunit/phpunit": "^9.5.8",
+        "limedeck/phpunit-detailed-printer": "^6.0",
+        "orchestra/testbench": "^7.0"
     },
     "autoload": {
         "classmap": [
